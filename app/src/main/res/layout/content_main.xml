@@ -11,14 +11,62 @@
     tools:context="hr.fer.zpr.igor.sensorreader.MainActivity"
     tools:showIn="@layout/activity_main">
 
+
+    <RelativeLayout
+        android:id="@+id/server_layout"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:gravity="center"
+        android:paddingLeft="10dp"
+        android:paddingRight="10dp"
+        android:background="#FF444444"
+        android:layout_weight="10">
+
+        <TextView
+            android:id="@+id/server_tag"
+            android:gravity="center_vertical"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_alignParentLeft="true"
+            android:textColor="@android:color/holo_blue_light"
+            android:text="Server: "/>
+
+        <Button
+            android:id="@+id/server_btn"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_centerVertical="true"
+            android:layout_alignParentRight="true"
+            android:text="Connect"/>
+
+        <EditText
+            android:id="@+id/server_et"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_centerHorizontal="true"
+            android:layout_toRightOf="@id/server_tag"
+            android:layout_toLeftOf="@id/server_btn"
+            android:textColor="@android:color/holo_blue_light"
+            android:textSize="12sp"
+            android:isScrollContainer="true"/>
+
+
+
+    </RelativeLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0.5dp"
+        android:background="@android:color/white"/>
+
     <LinearLayout
         android:id="@+id/select_layout"
         android:layout_width="match_parent"
-        android:layout_height="100dp"
+        android:layout_height="75dp"
         android:orientation="horizontal"
         android:weightSum="100"
         android:background="#FF444444"
-        android:layout_weight="25">
+        android:layout_weight="15">
 
         <RelativeLayout
             android:id="@+id/sensor_select_layout"
@@ -42,13 +90,13 @@
                 android:layout_height="wrap_content"
                 android:layout_below="@id/sensor_select_tag"
                 android:textColor="@android:color/holo_blue_light"
-                android:textSize="25sp"
+                android:textSize="15sp"
                 android:gravity="center"/>
 
         </RelativeLayout>
 
         <View
-            android:layout_width="1dp"
+            android:layout_width="0.5dp"
             android:layout_height="match_parent"
             android:background="@android:color/white"/>
 
@@ -73,7 +121,7 @@
                 android:layout_height="wrap_content"
                 android:layout_below="@id/resolution_select_tag"
                 android:textColor="@android:color/holo_blue_light"
-                android:textSize="25sp"
+                android:textSize="15sp"
                 android:gravity="center"/>
 
         </RelativeLayout>
@@ -81,7 +129,7 @@
 
     <View
         android:layout_width="match_parent"
-        android:layout_height="1dp"
+        android:layout_height="0.5dp"
         android:background="@android:color/white"/>
 
     <LinearLayout
@@ -89,26 +137,10 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
+        android:divider="@drawable/chart_separator"
         android:layout_weight="75"
         android:weightSum="90">
 
-        <com.github.mikephil.charting.charts.LineChart
-            android:id="@+id/line_chart1"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_weight="30" />
-
-        <com.github.mikephil.charting.charts.LineChart
-            android:id="@+id/line_chart2"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_weight="30" />
-
-        <com.github.mikephil.charting.charts.LineChart
-            android:id="@+id/line_chart3"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_weight="30" />
     </LinearLayout>
 
     <NumberPicker android:id="@+id/numberpicker"

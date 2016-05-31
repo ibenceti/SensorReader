@@ -7,16 +7,22 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.PowerManager;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
+import android.support.v7.widget.LinearLayoutCompat;
 import android.support.v7.widget.Toolbar;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -30,15 +36,15 @@ import com.github.mikephil.charting.data.LineData;
 import com.github.mikephil.charting.data.LineDataSet;
 import com.github.mikephil.charting.utils.ColorTemplate;
 import com.github.nkzawa.emitter.Emitter;
+import com.github.nkzawa.socketio.client.Ack;
 import com.github.nkzawa.socketio.client.IO;
 import com.github.nkzawa.socketio.client.Socket;
-
-import org.json.JSONException;
-import org.json.JSONObject;
 
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Timer;
+import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
@@ -47,26 +53,48 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private Sensor selectedSensor;
     private Sensor activeSensor;
     private SensorEvent currentSensorData;
-    private LineChart chart1;
-    private LineChart chart2;
-    private LineChart chart3;
     private Handler handler;
     private RelativeLayout sensorSelectButton;
     private RelativeLayout resolutionSelectButton;
+    private LinearLayout sensorLayout;
     private TextView selectedSensorText;
     private TextView selectedResolutionText;
     private SensorListAdapter sensorListAdapter;
     List<Sensor> deviceSensors;
     private ResolutionListAdapter resolutionListAdapter;
     List<Integer> resolutions;
-    List<View> graphViews;
+    List<View> lineCharts = new ArrayList<>();
+    CollectedData data;
+    private String deviceId;
+    private int dataSizeLimit;
+    private int dataTimeLimit;
+    private int timeElapsed;
+    private boolean isSending = false;
+    private boolean isReconnecting = false;
+    private boolean hasReconnected = false;
+    private boolean serverReady = true;
+    private Emitter.Listener registerListener;
+    private Emitter.Listener startListener;
+    private Emitter.Listener stopListener;
+    private Emitter.Listener reconnectingListener;
+    private Emitter.Listener reconnectedListener;
+    PowerManager powerManager;
+    PowerManager.WakeLock wakeLock;
+
+    private Button serverButton;
+    private EditText serverEditText;
 
     private Socket mSocket;
-    {
-        try {
-            mSocket = IO.socket("http://192.168.1.2:3000");
-        } catch (URISyntaxException e) {}
-    }
+    Timer myTimer;
+
+
+//    {
+//        try {
+//            mSocket = IO.socket("http://192.168.1.2:3000");
+//        } catch (URISyntaxException e) {
+//            e.printStackTrace();
+//        }
+//    }
 
 
     @Override
@@ -75,45 +103,141 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         setContentView(R.layout.activity_main);
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
+
+        deviceId = Preferences.getId(this);
+        if (TextUtils.isEmpty(deviceId)) {
+            deviceId = UUID.randomUUID().toString();
+            Preferences.setId(deviceId, this);
+        }
+
+        powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+        wakeLock = powerManager.newWakeLock(PowerManager.SCREEN_DIM_WAKE_LOCK, "MyWakelockTag");
+        wakeLock.acquire();
+
         populateResolutionList();
 
-        mSocket.on("new message", new Emitter.Listener() {
+//        mSocket.on("start_sending", new Emitter.Listener() {
+//            @Override
+//            public void call(Object... args) {
+//                Log.d("START_SENDING", "");
+//            }
+//        });
+
+        registerListener = new Emitter.Listener() {
             @Override
             public void call(Object... args) {
-                Toast.makeText(MainActivity.this, "message recieved", Toast.LENGTH_SHORT).show();
+                registerDevice();
             }
-        });
-        mSocket.connect();
+        };
+
+        startListener = new Emitter.Listener() {
+            @Override
+            public void call(Object... args) {
+                isSending = true;
+            }
+        };
+
+        stopListener = new Emitter.Listener() {
+            @Override
+            public void call(Object... args) {
+                isSending = false;
+            }
+        };
+
+        reconnectingListener = new Emitter.Listener() {
+            @Override
+            public void call(Object... args) {
+                isReconnecting = true;
+            }
+        };
+
+        reconnectedListener = new Emitter.Listener() {
+            @Override
+            public void call(Object... args) {
+                hasReconnected = true;
+                isReconnecting = false;
+            }
+        };
 
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         deviceSensors = sensorManager.getSensorList(Sensor.TYPE_ALL);
+        sensorLayout = (LinearLayout) findViewById(R.id.sensor_layout);
+
+        serverEditText = (EditText) findViewById(R.id.server_et);
+        serverButton = (Button) findViewById(R.id.server_btn);
+        serverButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+
+                try {
+                    mSocket = IO.socket(serverEditText.getText().toString());
+                    mSocket.connect();
+
+                    mSocket.on("request_registration", registerListener);
+                    mSocket.on("start_sending", startListener);
+                    mSocket.on("stop_sending", stopListener);
+                    mSocket.on(Socket.EVENT_RECONNECTING, reconnectingListener);
+                    mSocket.on(Socket.EVENT_RECONNECT, reconnectedListener);
+
+                    Toast.makeText(MainActivity.this, "Connected to server.", Toast.LENGTH_SHORT).show();
+
+                } catch (URISyntaxException e) {
+                    e.printStackTrace();
+                    Toast.makeText(MainActivity.this, "Connection failed.", Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
 
         sensorSelectButton = (RelativeLayout) findViewById(R.id.sensor_select_layout);
         sensorSelectButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
 
-                sensorListAdapter = new SensorListAdapter(MainActivity.this, 0, deviceSensors);
+                if (isSending) {
+                    AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+                    builder.setTitle("Sending data");
+                    builder.setMessage("Can't change settings while sending data.");
+                    builder.setNegativeButton("Stop sending", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                            isSending = false;
+                            mSocket.disconnect();
+                            dialog.dismiss();
+                        }
+                    });
+                    builder.setPositiveButton("Ok", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                            dialog.dismiss();
+                        }
+                    });
+                    builder.show();
 
-                AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
-                builder.setTitle("Select sensor:");
-                builder.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialog, int which) {
-                        dialog.dismiss();
-                    }
-                });
+                } else {
 
-                builder.setAdapter(sensorListAdapter, new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialog, int which) {
-                        selectedSensor = (Sensor) sensorListAdapter.getItem(which);
-                        selectedSensorText.setText(selectedSensor.getName());
-                        restart();
-                        dialog.dismiss();
-                    }
-                });
-                builder.show();
+                    sensorListAdapter = new SensorListAdapter(MainActivity.this, 0, deviceSensors);
+
+                    AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+                    builder.setTitle("Select sensor:");
+                    builder.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                            dialog.dismiss();
+                        }
+                    });
+
+                    builder.setAdapter(sensorListAdapter, new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                            selectedSensor = (Sensor) sensorListAdapter.getItem(which);
+                            selectedSensorText.setText(selectedSensor.getName());
+                            restart();
+                            registerDevice();
+                            dialog.dismiss();
+                        }
+                    });
+                    builder.show();
+                }
             }
         });
 
@@ -122,145 +246,148 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             @Override
             public void onClick(View v) {
 
-                resolutionListAdapter = new ResolutionListAdapter(MainActivity.this, 0, resolutions);
+                if (isSending) {
+                    AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+                    builder.setTitle("Sending data");
+                    builder.setMessage("Can't change settings while sending data.");
+                    builder.setNegativeButton("Stop sending", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                            isSending = false;
+                            mSocket.disconnect();
+                            dialog.dismiss();
+                        }
+                    });
+                    builder.setPositiveButton("Ok", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                            dialog.dismiss();
+                        }
+                    });
+                    builder.show();
 
-                AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
-                builder.setTitle("Select resolution:");
-                builder.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialog, int which) {
-                        dialog.dismiss();
-                    }
-                });
+                } else {
 
-                builder.setAdapter(resolutionListAdapter, new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialog, int which) {
-                        selectedResolution = (int) resolutionListAdapter.getItem(which);
-                        selectedResolutionText.setText(selectedResolution + "");
-                        restart();
-                        dialog.dismiss();
-                    }
-                });
-                builder.show();
+                    resolutionListAdapter = new ResolutionListAdapter(MainActivity.this, 0, resolutions);
+
+                    AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+                    builder.setTitle("Select resolution:");
+                    builder.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                            dialog.dismiss();
+                        }
+                    });
+
+                    builder.setAdapter(resolutionListAdapter, new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                            selectedResolution = (int) resolutionListAdapter.getItem(which);
+                            selectedResolutionText.setText(selectedResolution + "");
+                            restart();
+                            registerDevice();
+                            dialog.dismiss();
+                        }
+                    });
+                    builder.show();
+                }
             }
         });
 
         selectedSensorText = (TextView) findViewById(R.id.sensor_select_selected);
         selectedResolutionText = (TextView) findViewById(R.id.resolution_select_selected);
 
-        initCharts();
         selectedSensor = deviceSensors.get(0);
+        initCharts();
         activeSensor = sensorManager.getDefaultSensor(selectedSensor.getType());
         selectedResolution = 500;
+
+        data = new CollectedData(deviceId, activeSensor.getType(), activeSensor.getName(), selectedResolution);
+
         selectedSensorText.setText(selectedSensor.getName());
         selectedResolutionText.setText(selectedResolution + "");
         handler = new Handler();
-        handler.postDelayed(sensorDataTimer, 500);
+        handler.postDelayed(sensorDataTimer, selectedResolution);
 
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        sensorManager.unregisterListener(this);
+        myTimer.cancel();
         mSocket.disconnect();
+        mSocket.close();
+        wakeLock.release();
     }
 
     private void initCharts() {
-        //start: chart1
 
-        //TODO popis senzora s brojem vrijednosti koje vracaju + inflate taj broj grafova
+        int chartNumber = Utils.numberOfValuesFormType(selectedSensor.getType());
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayoutCompat.LayoutParams.MATCH_PARENT,
+                LinearLayoutCompat.LayoutParams.MATCH_PARENT, 1.0f);
 
-        chart1 = (LineChart) findViewById(R.id.line_chart1);
-        chart1.setDragEnabled(true);
-        chart1.setScaleEnabled(true);
-        chart1.setPinchZoom(true);
-        chart1.setBackgroundColor(Color.DKGRAY);
+        sensorLayout.removeAllViews();
+        sensorLayout.setWeightSum(chartNumber);
 
-        LineData data1 = new LineData();
-        data1.setValueTextColor(Color.WHITE);
-        chart1.setData(data1);
+        if (!lineCharts.isEmpty())
+            lineCharts.clear();
 
-        Legend legend1 = chart1.getLegend();
-        legend1.setForm(Legend.LegendForm.LINE);
-        legend1.setTextColor(Color.WHITE);
+        for (int i = 0; i < chartNumber; i++) {
 
-        XAxis xAxis1 = chart1.getXAxis();
-        xAxis1.setTextColor(Color.WHITE);
-        xAxis1.setDrawGridLines(false);
-        xAxis1.setAvoidFirstLastClipping(true);
+            View chartView = getLayoutInflater().inflate(R.layout.layout_graph, null, false);
+            LineChart chart = (LineChart) chartView.findViewById(R.id.line_chart);
 
-        YAxis yAxis11 = chart1.getAxisLeft();
-        yAxis11.setTextColor(Color.WHITE);
-        yAxis11.setDrawGridLines(true);
+            chart.setDragEnabled(true);
+            chart.setScaleEnabled(true);
+            chart.setPinchZoom(true);
+            chart.setBackgroundColor(Color.DKGRAY);
 
-        YAxis yAxis12 = chart1.getAxisRight();
-        yAxis12.setEnabled(false);
-        //end:char1
+            LineData data = new LineData();
+            data.setValueTextColor(Color.WHITE);
+            chart.setData(data);
 
-        //start: chart2
-        chart2 = (LineChart) findViewById(R.id.line_chart2);
-        chart2.setDragEnabled(true);
-        chart2.setScaleEnabled(true);
-        chart2.setPinchZoom(true);
-        chart2.setBackgroundColor(Color.DKGRAY);
+            Legend legend = chart.getLegend();
+            legend.setForm(Legend.LegendForm.LINE);
+            legend.setTextColor(Color.WHITE);
 
-        LineData data2 = new LineData();
-        data2.setValueTextColor(Color.WHITE);
-        chart2.setData(data2);
+            XAxis xAxis = chart.getXAxis();
+            xAxis.setTextColor(Color.WHITE);
+            xAxis.setDrawGridLines(false);
+            xAxis.setAvoidFirstLastClipping(true);
 
-        Legend legend2 = chart2.getLegend();
-        legend2.setForm(Legend.LegendForm.LINE);
-        legend2.setTextColor(Color.WHITE);
+            YAxis yAxis1 = chart.getAxisLeft();
+            yAxis1.setTextColor(Color.WHITE);
+            yAxis1.setDrawGridLines(true);
 
-        XAxis xAxis2 = chart2.getXAxis();
-        xAxis2.setTextColor(Color.WHITE);
-        xAxis2.setDrawGridLines(false);
-        xAxis2.setAvoidFirstLastClipping(true);
+            YAxis yAxis2 = chart.getAxisRight();
+            yAxis2.setEnabled(false);
 
-        YAxis yAxis21 = chart2.getAxisLeft();
-        yAxis21.setTextColor(Color.WHITE);
-        yAxis21.setDrawGridLines(true);
-
-        YAxis yAxis22 = chart2.getAxisRight();
-        yAxis22.setEnabled(false);
-        //end: chart2
-
-        //start: chart3
-        chart3 = (LineChart) findViewById(R.id.line_chart3);
-        chart3.setDragEnabled(true);
-        chart3.setScaleEnabled(true);
-        chart3.setPinchZoom(true);
-        chart3.setBackgroundColor(Color.DKGRAY);
-
-        LineData data3 = new LineData();
-        data3.setValueTextColor(Color.WHITE);
-        chart3.setData(data3);
-
-        Legend legend3 = chart3.getLegend();
-        legend3.setForm(Legend.LegendForm.LINE);
-        legend3.setTextColor(Color.WHITE);
-
-        XAxis xAxis3 = chart3.getXAxis();
-        xAxis3.setTextColor(Color.WHITE);
-        xAxis3.setDrawGridLines(false);
-        xAxis3.setAvoidFirstLastClipping(true);
-
-        YAxis yAxis31 = chart3.getAxisLeft();
-        yAxis31.setTextColor(Color.WHITE);
-        yAxis31.setDrawGridLines(true);
-
-        YAxis yAxis32 = chart3.getAxisRight();
-        yAxis32.setEnabled(false);
-        //end: chart3
+            chartView.setTag(chart);
+            chartView.setLayoutParams(params);
+            lineCharts.add(chartView);
+            sensorLayout.addView(chartView);
+        }
     }
+
 
     Runnable sensorDataTimer = new Runnable() {
         @Override
         public void run() {
-            addSensorData(currentSensorData);
-            sendData("Sensor changed.");
-            Log.i("Sensor changed", currentSensorData.values.length + "");
+
+            if (isSending && currentSensorData != null){
+                if (data.isReadyToSend() && !isReconnecting && serverReady) {
+
+                    sendData(data.getData().toString());
+                    Log.i("Sensor changed", data.getData().toString());
+                    data.reset();
+                }
+                data.addData(currentSensorData);
+            }
+            if (currentSensorData != null) {
+                addSensorDataToCharts(currentSensorData);
+            }
             handler.postDelayed(sensorDataTimer, selectedResolution);
         }
     };
@@ -294,7 +421,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         return super.onOptionsItemSelected(item);
     }
 
-
     @Override
     public void onSensorChanged(SensorEvent event) {
         currentSensorData = event;
@@ -316,8 +442,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             if (lineDataSet == null) {
                 lineDataSet = new LineDataSet(null, "Sensor data");
                 lineDataSet.setDrawCircles(false);
-                lineDataSet.setDrawCubic(true);
-                lineDataSet.setCubicIntensity(0.1f);
+                lineDataSet.setDrawCubic(false);
+                lineDataSet.setCubicIntensity(0.001f);
                 lineDataSet.setAxisDependency(YAxis.AxisDependency.LEFT);
                 lineDataSet.setColor(ColorTemplate.getHoloBlue());
                 lineDataSet.setCircleColor(ColorTemplate.getHoloBlue());
@@ -341,10 +467,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
     }
 
-    private void addSensorData(SensorEvent event) {
+    private void addSensorDataToCharts(SensorEvent event) {
 
-        for (int i = 0; i < event.values.length; i++) {
-           //todo generiraj listu viewholdera umjesto view pa dodaj podathe u linechartove
+        for (int i = 0; i < lineCharts.size(); i++) {
+
+            addLineDataEntry(event.values[i], (LineChart) lineCharts.get(i).getTag());
         }
     }
 
@@ -368,25 +495,23 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         resolutions.add(800);
         resolutions.add(900);
         resolutions.add(1000);
-        resolutions.add(1100);
-        resolutions.add(1200);
-        resolutions.add(1300);
-        resolutions.add(1400);
-        resolutions.add(1500);
+        //resolutions.add(1100);
+        //resolutions.add(1200);
+        //resolutions.add(1300);
+        //resolutions.add(1400);
+        //resolutions.add(1500);
     }
 
     private void restart() {
 
         sensorManager.unregisterListener(this);
-        chart1.clear();
-        chart2.clear();
-        chart3.clear();
-        initCharts();
-
         activeSensor = sensorManager.getDefaultSensor(selectedSensor.getType());
+        initCharts();
         handler = new Handler();
         handler.postDelayed(sensorDataTimer, selectedResolution);
-        sensorManager.registerListener(this, activeSensor, SensorManager.SENSOR_DELAY_FASTEST);
+
+        data = new CollectedData(deviceId, activeSensor.getType(), activeSensor.getName(), selectedResolution);
+        sensorManager.registerListener(this, activeSensor, SensorManager.SENSOR_DELAY_NORMAL);
     }
 
     private void sendData(String message) {
@@ -394,7 +519,50 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         if (TextUtils.isEmpty(message)) {
             return;
         }
-        mSocket.emit("new message", message);
+        serverReady = false;
+        mSocket.emit("new message", message, new Ack() {
+            @Override
+            public void call(Object... args) {
+                serverReady = true;
+            }
+        });
     }
 
+    private void stopSensorListening() {
+        sensorManager.unregisterListener(this);
+    }
+
+    private void startSensorListening() {
+        sensorManager.registerListener(this, activeSensor, SensorManager.SENSOR_DELAY_NORMAL);
+    }
+
+    private void startDataSending() {
+        isSending = true;
+    }
+
+    private void stopDataSending() {
+        isSending = false;
+    }
+
+    private void registerDevice(){
+
+        if (hasReconnected){
+            mSocket.emit("register_device",
+                    "{\"device\":\"" + Build.MODEL +
+                            "\",\"reconnection\":\"" + true +
+                            "\",\"id\":\"" + deviceId +
+                            "\",\"sensor\":\"" + selectedSensor.getName() +
+                            "\",\"data_fields\":" + Utils.numberOfValuesFormType(selectedSensor.getType()) +
+                            ",\"resolution\":" + selectedResolution + "}");
+
+            hasReconnected = false;
+        } else {
+            mSocket.emit("register_device",
+                    "{\"device\":\"" + Build.MODEL +
+                            "\",\"id\":\"" + deviceId +
+                            "\",\"sensor\":\"" + selectedSensor.getName() +
+                            "\",\"data_fields\":" + Utils.numberOfValuesFormType(selectedSensor.getType()) +
+                            ",\"resolution\":" + selectedResolution + "}");
+        }
+    }
 }
