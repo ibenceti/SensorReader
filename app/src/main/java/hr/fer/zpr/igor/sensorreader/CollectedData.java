@@ -9,6 +9,7 @@ import org.json.JSONObject;
 public class CollectedData {
 
     private static final String DEVICE_ID = "device_id";
+    private static final String DEVICE_NAME = "device_name";
     private static final String SENSOR_TYPE = "sensor_type";
     private static final String SENSOR_NAME = "sensor_name";
     private static final String DATA_ARRAYS = "data";
@@ -17,6 +18,7 @@ public class CollectedData {
 
 
     private String deviceId;
+    private String deviceName;
     private int sensorType;
     private String sensorName;
     private JSONObject data;
@@ -25,9 +27,11 @@ public class CollectedData {
     private long startTimestamp = 0;
     private int nrOfMeasurementsTaken = 0;
     private int nrOfValuesMeasured = 0;
+    private boolean isInitialised = false;
 
-    public CollectedData(String deviceId, int sensorType, String sensorName, int resolution) {
+    public CollectedData(String deviceId, String deviceName, int sensorType, String sensorName, int resolution) {
         this.deviceId = deviceId;
+        this.deviceName = deviceName;
         this.sensorType = sensorType;
         this.sensorName = sensorName;
         this.resolution = resolution;
@@ -42,6 +46,7 @@ public class CollectedData {
 
         try {
             data.put(DEVICE_ID, deviceId);
+            data.put(DEVICE_NAME, deviceName);
             data.put(SENSOR_TYPE, sensorType);
             data.put(SENSOR_NAME, sensorName);
             data.put(RESOLUTION, resolution);
@@ -55,13 +60,18 @@ public class CollectedData {
             JSONArray dataArray = new JSONArray();
             dataArrays.put(dataArray);
         }
+
+        isInitialised = true;
     }
 
     public void addData(SensorEvent sensorEvent) {
 
-        if (startTimestamp == 0) {
-            startTimestamp = sensorEvent.timestamp;
+        if (!isInitialised){
             initData(nrOfValuesMeasured);
+        }
+
+        if (startTimestamp == 0) {
+            startTimestamp = (int) (System.currentTimeMillis() / 1000);
         }
 
         nrOfMeasurementsTaken++;
@@ -98,8 +108,9 @@ public class CollectedData {
     }
 
     public void reset(){
+        startTimestamp = 0;
         nrOfMeasurementsTaken = 0;
-        data.remove("DATA_ARRAYS");
+        data.remove(DATA_ARRAYS);
         dataArrays = new JSONArray();
 
         for (int i = 0; i < nrOfValuesMeasured; i++) {

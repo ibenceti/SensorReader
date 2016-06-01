@@ -232,7 +232,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                             selectedSensor = (Sensor) sensorListAdapter.getItem(which);
                             selectedSensorText.setText(selectedSensor.getName());
                             restart();
-                            registerDevice();
+                            if (mSocket != null){
+                                updateDeviceData();
+                            }
                             dialog.dismiss();
                         }
                     });
@@ -285,7 +287,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                             selectedResolution = (int) resolutionListAdapter.getItem(which);
                             selectedResolutionText.setText(selectedResolution + "");
                             restart();
-                            registerDevice();
+                            if (mSocket != null){
+                                updateDeviceData();
+                            }
                             dialog.dismiss();
                         }
                     });
@@ -302,7 +306,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         activeSensor = sensorManager.getDefaultSensor(selectedSensor.getType());
         selectedResolution = 500;
 
-        data = new CollectedData(deviceId, activeSensor.getType(), activeSensor.getName(), selectedResolution);
+        data = new CollectedData(deviceId, Build.MODEL, activeSensor.getType(), activeSensor.getName(), selectedResolution);
 
         selectedSensorText.setText(selectedSensor.getName());
         selectedResolutionText.setText(selectedResolution + "");
@@ -402,6 +406,12 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     protected void onPause() {
         super.onPause();
         sensorManager.unregisterListener(this);
+    }
+
+    @Override
+    protected void onStop() {
+        mSocket.emit("disconnect");
+        super.onStop();
     }
 
     @Override
@@ -510,7 +520,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         handler = new Handler();
         handler.postDelayed(sensorDataTimer, selectedResolution);
 
-        data = new CollectedData(deviceId, activeSensor.getType(), activeSensor.getName(), selectedResolution);
+        data = new CollectedData(deviceId, Build.MODEL, activeSensor.getType(), activeSensor.getName(), selectedResolution);
         sensorManager.registerListener(this, activeSensor, SensorManager.SENSOR_DELAY_NORMAL);
     }
 
@@ -564,5 +574,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                             "\",\"data_fields\":" + Utils.numberOfValuesFormType(selectedSensor.getType()) +
                             ",\"resolution\":" + selectedResolution + "}");
         }
+    }
+
+    private void updateDeviceData(){
+        mSocket.emit("update_device_data",
+                "{\"device\":\"" + Build.MODEL +
+                        "\",\"id\":\"" + deviceId +
+                        "\",\"sensor\":\"" + selectedSensor.getName() +
+                        "\",\"data_fields\":" + Utils.numberOfValuesFormType(selectedSensor.getType()) +
+                        ",\"resolution\":" + selectedResolution + "}");
     }
 }
