@@ -14,11 +14,8 @@ import android.os.PowerManager;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.LinearLayoutCompat;
-import android.support.v7.widget.Toolbar;
 import android.text.TextUtils;
 import android.util.Log;
-import android.view.Menu;
-import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -35,16 +32,19 @@ import com.github.mikephil.charting.data.Entry;
 import com.github.mikephil.charting.data.LineData;
 import com.github.mikephil.charting.data.LineDataSet;
 import com.github.mikephil.charting.utils.ColorTemplate;
-import com.github.nkzawa.emitter.Emitter;
-import com.github.nkzawa.socketio.client.Ack;
-import com.github.nkzawa.socketio.client.IO;
-import com.github.nkzawa.socketio.client.Socket;
 
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Timer;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
+import io.socket.client.Ack;
+import io.socket.client.IO;
+import io.socket.client.Socket;
+import io.socket.emitter.Emitter;
 
 public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
@@ -66,9 +66,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     List<View> lineCharts = new ArrayList<>();
     CollectedData data;
     private String deviceId;
-    private int dataSizeLimit;
-    private int dataTimeLimit;
-    private int timeElapsed;
     private boolean isSending = false;
     private boolean isReconnecting = false;
     private boolean hasReconnected = false;
@@ -80,29 +77,19 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private Emitter.Listener reconnectedListener;
     PowerManager powerManager;
     PowerManager.WakeLock wakeLock;
+    ScheduledExecutorService execService = Executors.newScheduledThreadPool(5);
 
     private Button serverButton;
     private EditText serverEditText;
 
     private Socket mSocket;
-    Timer myTimer;
-
-
-//    {
-//        try {
-//            mSocket = IO.socket("http://192.168.1.2:3000");
-//        } catch (URISyntaxException e) {
-//            e.printStackTrace();
-//        }
-//    }
+    private String currentServer = "";
 
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
-        setSupportActionBar(toolbar);
 
         deviceId = Preferences.getId(this);
         if (TextUtils.isEmpty(deviceId)) {
@@ -113,15 +100,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         powerManager = (PowerManager) getSystemService(POWER_SERVICE);
         wakeLock = powerManager.newWakeLock(PowerManager.SCREEN_DIM_WAKE_LOCK, "MyWakelockTag");
         wakeLock.acquire();
-
-        populateResolutionList();
-
-//        mSocket.on("start_sending", new Emitter.Listener() {
-//            @Override
-//            public void call(Object... args) {
-//                Log.d("START_SENDING", "");
-//            }
-//        });
 
         registerListener = new Emitter.Listener() {
             @Override
@@ -170,16 +148,18 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             public void onClick(View v) {
 
                 try {
-                    mSocket = IO.socket(serverEditText.getText().toString());
-                    mSocket.connect();
 
+                    if (!currentServer.equals(serverEditText.getText().toString().trim())){
+                        currentServer = serverEditText.getText().toString().trim();
+                        mSocket = IO.socket(currentServer);
+                    }
+
+                    mSocket.connect();
                     mSocket.on("request_registration", registerListener);
                     mSocket.on("start_sending", startListener);
                     mSocket.on("stop_sending", stopListener);
                     mSocket.on(Socket.EVENT_RECONNECTING, reconnectingListener);
                     mSocket.on(Socket.EVENT_RECONNECT, reconnectedListener);
-
-                    Toast.makeText(MainActivity.this, "Connected to server.", Toast.LENGTH_SHORT).show();
 
                 } catch (URISyntaxException e) {
                     e.printStackTrace();
@@ -304,14 +284,18 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         selectedSensor = deviceSensors.get(0);
         initCharts();
         activeSensor = sensorManager.getDefaultSensor(selectedSensor.getType());
+        populateResolutionList();
         selectedResolution = 500;
 
         data = new CollectedData(deviceId, Build.MODEL, activeSensor.getType(), activeSensor.getName(), selectedResolution);
 
         selectedSensorText.setText(selectedSensor.getName());
         selectedResolutionText.setText(selectedResolution + "");
-        handler = new Handler();
-        handler.postDelayed(sensorDataTimer, selectedResolution);
+        //handler = new Handler();
+        //handler.postDelayed(sensorDataTimer, selectedResolution);
+
+        execService.scheduleAtFixedRate(sensorDataTimer, 0, selectedResolution,TimeUnit.MILLISECONDS);
+
 
     }
 
@@ -319,10 +303,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     protected void onDestroy() {
         super.onDestroy();
         sensorManager.unregisterListener(this);
-        myTimer.cancel();
         mSocket.disconnect();
         mSocket.close();
         wakeLock.release();
+        execService.shutdown();
     }
 
     private void initCharts() {
@@ -347,14 +331,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             chart.setScaleEnabled(true);
             chart.setPinchZoom(true);
             chart.setBackgroundColor(Color.DKGRAY);
+            chart.setDescription("");
 
             LineData data = new LineData();
             data.setValueTextColor(Color.WHITE);
             chart.setData(data);
 
             Legend legend = chart.getLegend();
-            legend.setForm(Legend.LegendForm.LINE);
-            legend.setTextColor(Color.WHITE);
+            legend.setEnabled(false);
 
             XAxis xAxis = chart.getXAxis();
             xAxis.setTextColor(Color.WHITE);
@@ -392,14 +376,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             if (currentSensorData != null) {
                 addSensorDataToCharts(currentSensorData);
             }
-            handler.postDelayed(sensorDataTimer, selectedResolution);
+            //handler.postDelayed(sensorDataTimer, selectedResolution);
         }
     };
 
     @Override
     protected void onResume() {
         super.onResume();
-        sensorManager.registerListener(this, activeSensor, SensorManager.SENSOR_DELAY_NORMAL);
+        sensorManager.registerListener(this, activeSensor, SensorManager.SENSOR_DELAY_FASTEST);
     }
 
     @Override
@@ -412,23 +396,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     protected void onStop() {
         mSocket.emit("disconnect");
         super.onStop();
-    }
-
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        // Inflate the menu; this adds items to the action bar if it is present.
-        getMenuInflater().inflate(R.menu.menu_main, menu);
-        return true;
-    }
-
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        int id = item.getItemId();
-        if (id == R.id.action_settings) {
-            return true;
-        }
-
-        return super.onOptionsItemSelected(item);
     }
 
     @Override
@@ -487,29 +454,13 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     private void populateResolutionList() {
 
+        int[] res= {10, 15, 20, 25, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000};
         resolutions = new ArrayList<>();
-        resolutions.add(1);
-        resolutions.add(5);
-        resolutions.add(10);
-        resolutions.add(15);
-        resolutions.add(20);
-        resolutions.add(25);
-        resolutions.add(50);
-        resolutions.add(100);
-        resolutions.add(200);
-        resolutions.add(300);
-        resolutions.add(400);
-        resolutions.add(500);
-        resolutions.add(600);
-        resolutions.add(700);
-        resolutions.add(800);
-        resolutions.add(900);
-        resolutions.add(1000);
-        //resolutions.add(1100);
-        //resolutions.add(1200);
-        //resolutions.add(1300);
-        //resolutions.add(1400);
-        //resolutions.add(1500);
+
+        for (int i : res){
+            if (i >= activeSensor.getMinDelay()/1000)
+                resolutions.add(i);
+        }
     }
 
     private void restart() {
@@ -517,11 +468,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         sensorManager.unregisterListener(this);
         activeSensor = sensorManager.getDefaultSensor(selectedSensor.getType());
         initCharts();
-        handler = new Handler();
-        handler.postDelayed(sensorDataTimer, selectedResolution);
+        //handler = new Handler();
+        //handler.postDelayed(sensorDataTimer, selectedResolution);
+        execService.shutdown();
+        execService = Executors.newScheduledThreadPool(5);
+        execService.scheduleAtFixedRate(sensorDataTimer, 0, selectedResolution,TimeUnit.MILLISECONDS);
 
         data = new CollectedData(deviceId, Build.MODEL, activeSensor.getType(), activeSensor.getName(), selectedResolution);
-        sensorManager.registerListener(this, activeSensor, SensorManager.SENSOR_DELAY_NORMAL);
+        sensorManager.registerListener(this, activeSensor, SensorManager.SENSOR_DELAY_FASTEST);
     }
 
     private void sendData(String message) {
@@ -543,7 +497,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     }
 
     private void startSensorListening() {
-        sensorManager.registerListener(this, activeSensor, SensorManager.SENSOR_DELAY_NORMAL);
+        sensorManager.registerListener(this, activeSensor, SensorManager.SENSOR_DELAY_FASTEST);
     }
 
     private void startDataSending() {
@@ -562,17 +516,32 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                             "\",\"reconnection\":\"" + true +
                             "\",\"id\":\"" + deviceId +
                             "\",\"sensor\":\"" + selectedSensor.getName() +
+                            "\",\"sensor_vendor\":\"" + selectedSensor.getVendor() +
+                            "\",\"sensor_maxrange\":\"" + selectedSensor.getMaximumRange() +
                             "\",\"data_fields\":" + Utils.numberOfValuesFormType(selectedSensor.getType()) +
-                            ",\"resolution\":" + selectedResolution + "}");
-
+                            ",\"resolution\":" + selectedResolution + "}", new Ack() {
+                        @Override
+                        public void call(Object... args) {
+                            if (args[0].equals("new"))
+                                stopDataSending();
+                        }
+                    });
             hasReconnected = false;
         } else {
             mSocket.emit("register_device",
                     "{\"device\":\"" + Build.MODEL +
                             "\",\"id\":\"" + deviceId +
                             "\",\"sensor\":\"" + selectedSensor.getName() +
+                            "\",\"sensor_vendor\":\"" + selectedSensor.getVendor() +
+                            "\",\"sensor_maxrange\":\"" + selectedSensor.getMaximumRange() +
                             "\",\"data_fields\":" + Utils.numberOfValuesFormType(selectedSensor.getType()) +
-                            ",\"resolution\":" + selectedResolution + "}");
+                            ",\"resolution\":" + selectedResolution + "}", new Ack() {
+                        @Override
+                        public void call(Object... args) {
+                            if (args[0].equals("new"))
+                                stopDataSending();
+                        }
+                    });
         }
     }
 
@@ -581,6 +550,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 "{\"device\":\"" + Build.MODEL +
                         "\",\"id\":\"" + deviceId +
                         "\",\"sensor\":\"" + selectedSensor.getName() +
+                        "\",\"sensor_vendor\":\"" + selectedSensor.getVendor() +
+                        "\",\"sensor_maxrange\":\"" + selectedSensor.getMaximumRange() +
                         "\",\"data_fields\":" + Utils.numberOfValuesFormType(selectedSensor.getType()) +
                         ",\"resolution\":" + selectedResolution + "}");
     }

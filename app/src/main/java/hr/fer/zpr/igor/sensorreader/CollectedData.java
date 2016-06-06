@@ -43,6 +43,7 @@ public class CollectedData {
     private void initData(int nrOfDataValues) {
 
         nrOfValuesMeasured = Utils.numberOfValuesFormType(sensorType);
+        startTimestamp = System.currentTimeMillis();
 
         try {
             data.put(DEVICE_ID, deviceId);
@@ -66,12 +67,8 @@ public class CollectedData {
 
     public void addData(SensorEvent sensorEvent) {
 
-        if (!isInitialised){
+        if (!isInitialised) {
             initData(nrOfValuesMeasured);
-        }
-
-        if (startTimestamp == 0) {
-            startTimestamp = (int) (System.currentTimeMillis() / 1000);
         }
 
         nrOfMeasurementsTaken++;
@@ -87,7 +84,7 @@ public class CollectedData {
         }
     }
 
-    public JSONObject getData(){
+    public JSONObject getData() {
 
         try {
             data.put(DATA_ARRAYS, dataArrays);
@@ -98,19 +95,20 @@ public class CollectedData {
         return data;
     }
 
-    public int getDataSize(){
-        //TODO
-        return 0;
+    public boolean isReadyToSend() {
+        return nrOfMeasurementsTaken >= (1000 / resolution);
     }
 
-    public boolean isReadyToSend(){
-        return nrOfMeasurementsTaken >= (1000/resolution);
-    }
-
-    public void reset(){
-        startTimestamp = 0;
+    public void reset() {
+        startTimestamp = System.currentTimeMillis();
         nrOfMeasurementsTaken = 0;
-        data.remove(DATA_ARRAYS);
+        try {
+            data.remove(DATA_ARRAYS);
+            data.remove(START_TIMESTAMP);
+            data.put(START_TIMESTAMP, startTimestamp);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
         dataArrays = new JSONArray();
 
         for (int i = 0; i < nrOfValuesMeasured; i++) {
