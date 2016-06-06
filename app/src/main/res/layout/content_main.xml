@@ -18,7 +18,8 @@
         android:paddingLeft="10dp"
         android:paddingRight="10dp"
         android:background="#FF444444"
-        android:layout_weight="10">
+        android:layout_weight="10"
+        android:focusableInTouchMode="true">
 
         <TextView
             android:id="@+id/server_tag"

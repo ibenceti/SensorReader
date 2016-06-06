@@ -56,6 +56,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private Handler handler;
     private RelativeLayout sensorSelectButton;
     private RelativeLayout resolutionSelectButton;
+    private RelativeLayout layoutProgress;
     private LinearLayout sensorLayout;
     private TextView selectedSensorText;
     private TextView selectedResolutionText;
@@ -126,6 +127,12 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             @Override
             public void call(Object... args) {
                 isReconnecting = true;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        layoutProgress.setVisibility(View.VISIBLE);
+                    }
+                });
             }
         };
 
@@ -134,12 +141,19 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             public void call(Object... args) {
                 hasReconnected = true;
                 isReconnecting = false;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        layoutProgress.setVisibility(View.GONE);
+                    }
+                });
             }
         };
 
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         deviceSensors = sensorManager.getSensorList(Sensor.TYPE_ALL);
         sensorLayout = (LinearLayout) findViewById(R.id.sensor_layout);
+        layoutProgress = (RelativeLayout) findViewById(R.id.layout_progress);
 
         serverEditText = (EditText) findViewById(R.id.server_et);
         serverButton = (Button) findViewById(R.id.server_btn);
@@ -210,6 +224,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                         @Override
                         public void onClick(DialogInterface dialog, int which) {
                             selectedSensor = (Sensor) sensorListAdapter.getItem(which);
+                            populateResolutionList();
                             selectedSensorText.setText(selectedSensor.getName());
                             restart();
                             if (mSocket != null){
@@ -347,6 +362,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             YAxis yAxis1 = chart.getAxisLeft();
             yAxis1.setTextColor(Color.WHITE);
+            yAxis1.setDrawTopYLabelEntry(false);
+            yAxis1.setLabelCount(5, true);
             yAxis1.setDrawGridLines(true);
 
             YAxis yAxis2 = chart.getAxisRight();
@@ -458,7 +475,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         resolutions = new ArrayList<>();
 
         for (int i : res){
-            if (i >= activeSensor.getMinDelay()/1000)
+            if (i >= selectedSensor.getMinDelay()/1000)
                 resolutions.add(i);
         }
     }

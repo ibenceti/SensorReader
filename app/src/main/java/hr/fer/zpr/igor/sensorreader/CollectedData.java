@@ -38,10 +38,6 @@ public class CollectedData {
         data = new JSONObject();
         dataArrays = new JSONArray();
 
-    }
-
-    private void initData(int nrOfDataValues) {
-
         nrOfValuesMeasured = Utils.numberOfValuesFormType(sensorType);
         startTimestamp = System.currentTimeMillis();
 
@@ -56,20 +52,16 @@ public class CollectedData {
             e.printStackTrace();
         }
 
-        for (int i = 0; i < nrOfDataValues; i++) {
+        for (int i = 0; i < nrOfValuesMeasured; i++) {
 
             JSONArray dataArray = new JSONArray();
             dataArrays.put(dataArray);
         }
 
-        isInitialised = true;
     }
 
-    public void addData(SensorEvent sensorEvent) {
 
-        if (!isInitialised) {
-            initData(nrOfValuesMeasured);
-        }
+    public void addData(SensorEvent sensorEvent) {
 
         nrOfMeasurementsTaken++;
 
