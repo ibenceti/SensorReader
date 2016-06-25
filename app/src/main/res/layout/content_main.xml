@@ -1,24 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:weightSum="100"
     android:background="@android:color/darker_gray"
     tools:context="hr.fer.zpr.igor.sensorreader.MainActivity"
     tools:showIn="@layout/activity_main">
+
+    <TextView
+        android:id="@+id/tv_connection_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textAlignment="center"
+        android:background="@android:color/holo_red_light"
+        android:layout_alignParentTop="true"
+        android:text="Disconnected"/>
 
 
     <RelativeLayout
         android:id="@+id/server_layout"
         android:layout_width="match_parent"
         android:layout_height="50dp"
-        android:gravity="center"
         android:paddingLeft="10dp"
         android:paddingRight="10dp"
         android:background="#FF444444"
-        android:layout_weight="10"
+        android:layout_below="@id/tv_connection_status"
         android:focusableInTouchMode="true">
 
         <TextView
@@ -33,7 +39,7 @@
         <Button
             android:id="@+id/server_btn"
             android:layout_width="wrap_content"
-            android:layout_height="match_parent"
+            android:layout_height="wrap_content"
             android:layout_centerVertical="true"
             android:layout_alignParentRight="true"
             android:text="Connect"/>
@@ -41,7 +47,7 @@
         <EditText
             android:id="@+id/server_et"
             android:layout_width="wrap_content"
-            android:layout_height="match_parent"
+            android:layout_height="wrap_content"
             android:layout_centerHorizontal="true"
             android:layout_toRightOf="@id/server_tag"
             android:layout_toLeftOf="@id/server_btn"
@@ -49,23 +55,23 @@
             android:textSize="12sp"
             android:isScrollContainer="true"/>
 
-
-
     </RelativeLayout>
 
     <View
+        android:id="@+id/first_separator"
         android:layout_width="match_parent"
         android:layout_height="0.5dp"
-        android:background="@android:color/white"/>
+        android:background="@android:color/white"
+        android:layout_below="@id/server_layout"/>
 
     <LinearLayout
         android:id="@+id/select_layout"
         android:layout_width="match_parent"
-        android:layout_height="75dp"
+        android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:weightSum="100"
         android:background="#FF444444"
-        android:layout_weight="15">
+        android:layout_below="@id/first_separator">
 
         <RelativeLayout
             android:id="@+id/sensor_select_layout"
@@ -127,18 +133,21 @@
     </LinearLayout>
 
     <View
+        android:id="@+id/second_separator"
         android:layout_width="match_parent"
         android:layout_height="0.5dp"
-        android:background="@android:color/white"/>
+        android:background="@android:color/white"
+        android:layout_below="@+id/select_layout"/>
 
     <LinearLayout
         android:id="@+id/sensor_layout"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="wrap_content"
         android:orientation="vertical"
         android:divider="@drawable/chart_separator"
-        android:layout_weight="75"
-        android:weightSum="90">
+        android:layout_below="@id/second_separator"
+        android:weightSum="90"
+        android:layout_alignParentBottom="true">
 
     </LinearLayout>
-</LinearLayout>
+</RelativeLayout>

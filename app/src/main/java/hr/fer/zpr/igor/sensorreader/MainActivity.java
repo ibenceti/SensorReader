@@ -48,18 +48,22 @@ import io.socket.emitter.Emitter;
 
 public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
+    private static final int STATUS_CONNECTED = 1;
+    private static final int STATUS_DISCONNECTED = 2;
+    private static final int STATUS_RECONNECTING = 3;
+
+
     private SensorManager sensorManager;
     private Integer selectedResolution;
     private Sensor selectedSensor;
     private Sensor activeSensor;
     private SensorEvent currentSensorData;
-    private Handler handler;
     private RelativeLayout sensorSelectButton;
     private RelativeLayout resolutionSelectButton;
-    private RelativeLayout layoutProgress;
     private LinearLayout sensorLayout;
     private TextView selectedSensorText;
     private TextView selectedResolutionText;
+    private TextView tvConnectionStatus;
     private SensorListAdapter sensorListAdapter;
     List<Sensor> deviceSensors;
     private ResolutionListAdapter resolutionListAdapter;
@@ -67,15 +71,19 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     List<View> lineCharts = new ArrayList<>();
     CollectedData data;
     private String deviceId;
+
     private boolean isSending = false;
     private boolean isReconnecting = false;
     private boolean hasReconnected = false;
     private boolean serverReady = true;
+
     private Emitter.Listener registerListener;
     private Emitter.Listener startListener;
     private Emitter.Listener stopListener;
     private Emitter.Listener reconnectingListener;
     private Emitter.Listener reconnectedListener;
+    private Emitter.Listener disconnectedListener;
+
     PowerManager powerManager;
     PowerManager.WakeLock wakeLock;
     ScheduledExecutorService execService = Executors.newScheduledThreadPool(5);
@@ -130,7 +138,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
-                        layoutProgress.setVisibility(View.VISIBLE);
+                        setConnectionStatus(STATUS_RECONNECTING);
                     }
                 });
             }
@@ -144,7 +152,20 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
-                        layoutProgress.setVisibility(View.GONE);
+                        setConnectionStatus(STATUS_CONNECTED);
+                    }
+                });
+            }
+        };
+
+        disconnectedListener = new Emitter.Listener() {
+            @Override
+            public void call(Object... args) {
+                isSending = false;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        setConnectionStatus(STATUS_DISCONNECTED);
                     }
                 });
             }
@@ -153,7 +174,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         deviceSensors = sensorManager.getSensorList(Sensor.TYPE_ALL);
         sensorLayout = (LinearLayout) findViewById(R.id.sensor_layout);
-        layoutProgress = (RelativeLayout) findViewById(R.id.layout_progress);
 
         serverEditText = (EditText) findViewById(R.id.server_et);
         serverButton = (Button) findViewById(R.id.server_btn);
@@ -161,24 +181,41 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             @Override
             public void onClick(View v) {
 
-                try {
+                if(mSocket == null || !mSocket.connected()){
+                    try {
 
-                    if (!currentServer.equals(serverEditText.getText().toString().trim())){
-                        currentServer = serverEditText.getText().toString().trim();
-                        mSocket = IO.socket(currentServer);
+                        if (!currentServer.equals(serverEditText.getText().toString().trim())){
+                            currentServer = serverEditText.getText().toString().trim();
+                            mSocket = IO.socket(currentServer);
+                        }
+
+                        mSocket.connect();
+                        mSocket.on("request_registration", registerListener);
+                        mSocket.on("start_sending", startListener);
+                        mSocket.on("stop_sending", stopListener);
+                        mSocket.on(Socket.EVENT_CONNECT, new Emitter.Listener() {
+                            @Override
+                            public void call(Object... args) {
+                                runOnUiThread(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        setConnectionStatus(STATUS_CONNECTED);
+                                    }
+                                });
+                            }
+                        });
+                        mSocket.on(Socket.EVENT_RECONNECTING, reconnectingListener);
+                        mSocket.on(Socket.EVENT_RECONNECT, reconnectedListener);
+                        mSocket.on(Socket.EVENT_DISCONNECT, disconnectedListener);
+
+                    } catch (URISyntaxException e) {
+                        e.printStackTrace();
+                        Toast.makeText(MainActivity.this, "Connection failed.", Toast.LENGTH_SHORT).show();
                     }
-
-                    mSocket.connect();
-                    mSocket.on("request_registration", registerListener);
-                    mSocket.on("start_sending", startListener);
-                    mSocket.on("stop_sending", stopListener);
-                    mSocket.on(Socket.EVENT_RECONNECTING, reconnectingListener);
-                    mSocket.on(Socket.EVENT_RECONNECT, reconnectedListener);
-
-                } catch (URISyntaxException e) {
-                    e.printStackTrace();
-                    Toast.makeText(MainActivity.this, "Connection failed.", Toast.LENGTH_SHORT).show();
+                } else if (mSocket.connected() || isReconnecting) {
+                    mSocket.disconnect();
                 }
+
             }
         });
 
@@ -191,7 +228,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                     AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
                     builder.setTitle("Sending data");
                     builder.setMessage("Can't change settings while sending data.");
-                    builder.setNegativeButton("Stop sending", new DialogInterface.OnClickListener() {
+                    builder.setNegativeButton("Disconnect", new DialogInterface.OnClickListener() {
                         @Override
                         public void onClick(DialogInterface dialog, int which) {
                             isSending = false;
@@ -209,7 +246,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
                 } else {
 
-                    sensorListAdapter = new SensorListAdapter(MainActivity.this, 0, deviceSensors);
 
                     AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
                     builder.setTitle("Select sensor:");
@@ -275,7 +311,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                             dialog.dismiss();
                         }
                     });
-
+                    
+                    populateResolutionList();
                     builder.setAdapter(resolutionListAdapter, new DialogInterface.OnClickListener() {
                         @Override
                         public void onClick(DialogInterface dialog, int which) {
@@ -293,12 +330,16 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             }
         });
 
+        tvConnectionStatus = (TextView) findViewById(R.id.tv_connection_status);
+
         selectedSensorText = (TextView) findViewById(R.id.sensor_select_selected);
         selectedResolutionText = (TextView) findViewById(R.id.resolution_select_selected);
 
         selectedSensor = deviceSensors.get(0);
         initCharts();
         activeSensor = sensorManager.getDefaultSensor(selectedSensor.getType());
+
+        sensorListAdapter = new SensorListAdapter(MainActivity.this, 0, deviceSensors);
         populateResolutionList();
         selectedResolution = 500;
 
@@ -363,7 +404,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             YAxis yAxis1 = chart.getAxisLeft();
             yAxis1.setTextColor(Color.WHITE);
             yAxis1.setDrawTopYLabelEntry(false);
-            yAxis1.setLabelCount(5, true);
+            yAxis1.setLabelCount(5, false);
             yAxis1.setDrawGridLines(true);
 
             YAxis yAxis2 = chart.getAxisRight();
@@ -435,14 +476,13 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             if (lineDataSet == null) {
                 lineDataSet = new LineDataSet(null, "Sensor data");
-                lineDataSet.setDrawCircles(false);
                 lineDataSet.setDrawCubic(false);
+                lineDataSet.setDrawCircles(false);
                 lineDataSet.setCubicIntensity(0.001f);
                 lineDataSet.setAxisDependency(YAxis.AxisDependency.LEFT);
                 lineDataSet.setColor(ColorTemplate.getHoloBlue());
                 lineDataSet.setCircleColor(ColorTemplate.getHoloBlue());
                 lineDataSet.setLineWidth(1f);
-                lineDataSet.setCircleSize(4f);
                 lineDataSet.setFillAlpha(65);
                 lineDataSet.setFillColor(ColorTemplate.getHoloBlue());
                 lineDataSet.setHighLightColor(Color.rgb(244, 117, 177));
@@ -571,5 +611,26 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                         "\",\"sensor_maxrange\":\"" + selectedSensor.getMaximumRange() +
                         "\",\"data_fields\":" + Utils.numberOfValuesFormType(selectedSensor.getType()) +
                         ",\"resolution\":" + selectedResolution + "}");
+    }
+
+    private void setConnectionStatus(int connStatus){
+
+        switch(connStatus){
+            case STATUS_CONNECTED:
+                tvConnectionStatus.setBackgroundColor(Color.GREEN);
+                tvConnectionStatus.setText("Connected");
+                serverButton.setText("Disconnect");
+                break;
+            case STATUS_DISCONNECTED:
+                tvConnectionStatus.setBackgroundColor(Color.RED);
+                tvConnectionStatus.setText("Disconnected");
+                serverButton.setText("Connect");
+                break;
+            case STATUS_RECONNECTING:
+                tvConnectionStatus.setBackgroundColor(Color.YELLOW);
+                tvConnectionStatus.setText("Reconnecting");
+                serverButton.setText("Disconnect");
+                break;
+        }
     }
 }
