@@ -161,7 +161,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         disconnectedListener = new Emitter.Listener() {
             @Override
             public void call(Object... args) {
-                isSending = false;
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
@@ -181,39 +180,41 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             @Override
             public void onClick(View v) {
 
-                if(mSocket == null || !mSocket.connected()){
-                    try {
+                if (!TextUtils.isEmpty(serverEditText.getText())) {
+                    if (mSocket == null || !mSocket.connected()) {
+                        try {
 
-                        if (!currentServer.equals(serverEditText.getText().toString().trim())){
-                            currentServer = serverEditText.getText().toString().trim();
-                            mSocket = IO.socket(currentServer);
-                        }
-
-                        mSocket.connect();
-                        mSocket.on("request_registration", registerListener);
-                        mSocket.on("start_sending", startListener);
-                        mSocket.on("stop_sending", stopListener);
-                        mSocket.on(Socket.EVENT_CONNECT, new Emitter.Listener() {
-                            @Override
-                            public void call(Object... args) {
-                                runOnUiThread(new Runnable() {
-                                    @Override
-                                    public void run() {
-                                        setConnectionStatus(STATUS_CONNECTED);
-                                    }
-                                });
+                            if (!currentServer.equals(serverEditText.getText().toString().trim())) {
+                                currentServer = serverEditText.getText().toString().trim();
+                                mSocket = IO.socket(currentServer);
                             }
-                        });
-                        mSocket.on(Socket.EVENT_RECONNECTING, reconnectingListener);
-                        mSocket.on(Socket.EVENT_RECONNECT, reconnectedListener);
-                        mSocket.on(Socket.EVENT_DISCONNECT, disconnectedListener);
 
-                    } catch (URISyntaxException e) {
-                        e.printStackTrace();
-                        Toast.makeText(MainActivity.this, "Connection failed.", Toast.LENGTH_SHORT).show();
+                            mSocket.connect();
+                            mSocket.on("request_registration", registerListener);
+                            mSocket.on("start_sending", startListener);
+                            mSocket.on("stop_sending", stopListener);
+                            mSocket.on(Socket.EVENT_CONNECT, new Emitter.Listener() {
+                                @Override
+                                public void call(Object... args) {
+                                    runOnUiThread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            setConnectionStatus(STATUS_CONNECTED);
+                                        }
+                                    });
+                                }
+                            });
+                            mSocket.on(Socket.EVENT_RECONNECTING, reconnectingListener);
+                            mSocket.on(Socket.EVENT_RECONNECT, reconnectedListener);
+                            mSocket.on(Socket.EVENT_DISCONNECT, disconnectedListener);
+
+                        } catch (URISyntaxException e) {
+                            e.printStackTrace();
+                            Toast.makeText(MainActivity.this, "Connection failed.", Toast.LENGTH_SHORT).show();
+                        }
+                    } else if (mSocket.connected() || isReconnecting) {
+                        mSocket.disconnect();
                     }
-                } else if (mSocket.connected() || isReconnecting) {
-                    mSocket.disconnect();
                 }
 
             }
@@ -263,7 +264,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                             populateResolutionList();
                             selectedSensorText.setText(selectedSensor.getName());
                             restart();
-                            if (mSocket != null){
+                            if (mSocket != null) {
                                 updateDeviceData();
                             }
                             dialog.dismiss();
@@ -311,7 +312,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                             dialog.dismiss();
                         }
                     });
-                    
+
                     populateResolutionList();
                     builder.setAdapter(resolutionListAdapter, new DialogInterface.OnClickListener() {
                         @Override
@@ -319,7 +320,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                             selectedResolution = (int) resolutionListAdapter.getItem(which);
                             selectedResolutionText.setText(selectedResolution + "");
                             restart();
-                            if (mSocket != null){
+                            if (mSocket != null) {
                                 updateDeviceData();
                             }
                             dialog.dismiss();
@@ -350,7 +351,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         //handler = new Handler();
         //handler.postDelayed(sensorDataTimer, selectedResolution);
 
-        execService.scheduleAtFixedRate(sensorDataTimer, 0, selectedResolution,TimeUnit.MILLISECONDS);
+        execService.scheduleAtFixedRate(sensorDataTimer, 0, selectedResolution, TimeUnit.MILLISECONDS);
 
 
     }
@@ -422,7 +423,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         @Override
         public void run() {
 
-            if (isSending && currentSensorData != null){
+            if (isSending && currentSensorData != null) {
                 if (data.isReadyToSend() && !isReconnecting && serverReady) {
 
                     sendData(data.getData().toString());
@@ -511,11 +512,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     private void populateResolutionList() {
 
-        int[] res= {10, 15, 20, 25, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000};
+        int[] res = {10, 15, 20, 25, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000};
         resolutions = new ArrayList<>();
 
-        for (int i : res){
-            if (i >= selectedSensor.getMinDelay()/1000)
+        for (int i : res) {
+            if (i >= selectedSensor.getMinDelay() / 1000)
                 resolutions.add(i);
         }
     }
@@ -529,7 +530,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         //handler.postDelayed(sensorDataTimer, selectedResolution);
         execService.shutdown();
         execService = Executors.newScheduledThreadPool(5);
-        execService.scheduleAtFixedRate(sensorDataTimer, 0, selectedResolution,TimeUnit.MILLISECONDS);
+        execService.scheduleAtFixedRate(sensorDataTimer, 0, selectedResolution, TimeUnit.MILLISECONDS);
 
         data = new CollectedData(deviceId, Build.MODEL, activeSensor.getType(), activeSensor.getName(), selectedResolution);
         sensorManager.registerListener(this, activeSensor, SensorManager.SENSOR_DELAY_FASTEST);
@@ -565,9 +566,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         isSending = false;
     }
 
-    private void registerDevice(){
+    private void registerDevice() {
 
-        if (hasReconnected){
+        if (hasReconnected) {
             mSocket.emit("register_device",
                     "{\"device\":\"" + Build.MODEL +
                             "\",\"reconnection\":\"" + true +
@@ -602,7 +603,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
     }
 
-    private void updateDeviceData(){
+    private void updateDeviceData() {
         mSocket.emit("update_device_data",
                 "{\"device\":\"" + Build.MODEL +
                         "\",\"id\":\"" + deviceId +
@@ -613,9 +614,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                         ",\"resolution\":" + selectedResolution + "}");
     }
 
-    private void setConnectionStatus(int connStatus){
+    private void setConnectionStatus(int connStatus) {
 
-        switch(connStatus){
+        switch (connStatus) {
             case STATUS_CONNECTED:
                 tvConnectionStatus.setBackgroundColor(Color.GREEN);
                 tvConnectionStatus.setText("Connected");
