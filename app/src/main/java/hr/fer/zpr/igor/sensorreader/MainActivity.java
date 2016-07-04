@@ -25,16 +25,21 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.github.mikephil.charting.charts.LineChart;
+import com.github.mikephil.charting.components.AxisBase;
 import com.github.mikephil.charting.components.Legend;
 import com.github.mikephil.charting.components.XAxis;
 import com.github.mikephil.charting.components.YAxis;
 import com.github.mikephil.charting.data.Entry;
 import com.github.mikephil.charting.data.LineData;
 import com.github.mikephil.charting.data.LineDataSet;
+import com.github.mikephil.charting.formatter.XAxisValueFormatter;
 import com.github.mikephil.charting.utils.ColorTemplate;
+import com.github.mikephil.charting.utils.ViewPortHandler;
 
 import java.net.URISyntaxException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -107,8 +112,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
 
         powerManager = (PowerManager) getSystemService(POWER_SERVICE);
-        wakeLock = powerManager.newWakeLock(PowerManager.SCREEN_DIM_WAKE_LOCK, "MyWakelockTag");
-        wakeLock.acquire();
+//        wakeLock = powerManager.newWakeLock(PowerManager.SCREEN_DIM_WAKE_LOCK, "MyWakelockTag");
+//        wakeLock.acquire();
 
         registerListener = new Emitter.Listener() {
             @Override
@@ -337,7 +342,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         selectedResolutionText = (TextView) findViewById(R.id.resolution_select_selected);
 
         selectedSensor = deviceSensors.get(0);
-        initCharts();
+
         activeSensor = sensorManager.getDefaultSensor(selectedSensor.getType());
 
         sensorListAdapter = new SensorListAdapter(MainActivity.this, 0, deviceSensors);
@@ -352,7 +357,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         //handler.postDelayed(sensorDataTimer, selectedResolution);
 
         execService.scheduleAtFixedRate(sensorDataTimer, 0, selectedResolution, TimeUnit.MILLISECONDS);
-
+        initCharts();
 
     }
 
@@ -399,17 +404,27 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             XAxis xAxis = chart.getXAxis();
             xAxis.setTextColor(Color.WHITE);
-            xAxis.setDrawGridLines(false);
             xAxis.setAvoidFirstLastClipping(true);
+            xAxis.setDrawLabels(true);
+            xAxis.setDrawAxisLine(true);
+            xAxis.setLabelsToSkip(50);
+            xAxis.setPosition(XAxis.XAxisPosition.BOTTOM);
+            xAxis.setDrawGridLines(true);
 
             YAxis yAxis1 = chart.getAxisLeft();
+            yAxis1.setAxisMaxValue(selectedSensor.getMaximumRange());
+            yAxis1.setAxisMinValue(-selectedSensor.getMaximumRange());
             yAxis1.setTextColor(Color.WHITE);
-            yAxis1.setDrawTopYLabelEntry(false);
-            yAxis1.setLabelCount(5, false);
+            yAxis1.setDrawTopYLabelEntry(true);
+            yAxis1.setLabelCount(5, true);
             yAxis1.setDrawGridLines(true);
 
             YAxis yAxis2 = chart.getAxisRight();
-            yAxis2.setEnabled(false);
+            yAxis2.setEnabled(true);
+            yAxis2.setDrawAxisLine(true);
+            yAxis2.setDrawLabels(false);
+            yAxis2.setDrawTopYLabelEntry(true);
+            yAxis2.setDrawGridLines(false);
 
             chartView.setTag(chart);
             chartView.setLayoutParams(params);
@@ -493,7 +508,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 lineData.addDataSet(lineDataSet);
             }
 
-            lineData.addXValue("");
+            lineData.addXValue(getXValue());
             lineData.addEntry(new Entry(data, lineDataSet.getEntryCount()), 0);
 
             lineChart.notifyDataSetChanged();
@@ -512,7 +527,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     private void populateResolutionList() {
 
-        int[] res = {10, 15, 20, 25, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000};
+        int[] res = {20, 25, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000};
         resolutions = new ArrayList<>();
 
         for (int i : res) {
@@ -633,5 +648,19 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 serverButton.setText("Disconnect");
                 break;
         }
+    }
+
+
+    public String getXValue() {
+
+        int count = ((LineChart) lineCharts.get(0).getTag()).getLineData().getDataSets().get(0).getEntryCount();
+        int modulo = 1000 / selectedResolution;
+        int seconds = count / modulo;
+
+        String timeSeconds = (seconds % 60) < 10 ? ("0" + (seconds % 60)) : "" + (seconds % 60);
+        String timeMinutes = (seconds / 60) < 10 ? ("0" + (seconds / 60)) : "" + (seconds / 60);
+
+        return timeMinutes + ":" + timeSeconds;
+
     }
 }

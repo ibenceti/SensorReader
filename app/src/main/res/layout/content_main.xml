@@ -79,6 +79,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:clickable="true"
+            android:padding="5dp"
             android:layout_weight="50"
             android:gravity="center">
 
@@ -110,6 +111,7 @@
             android:id="@+id/resolution_select_layout"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:padding="5dp"
             android:layout_weight="50"
             android:clickable="true">
 
