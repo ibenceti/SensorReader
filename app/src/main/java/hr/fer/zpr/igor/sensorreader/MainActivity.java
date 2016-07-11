@@ -9,7 +9,6 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
 import android.os.PowerManager;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
@@ -25,21 +24,16 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.github.mikephil.charting.charts.LineChart;
-import com.github.mikephil.charting.components.AxisBase;
 import com.github.mikephil.charting.components.Legend;
 import com.github.mikephil.charting.components.XAxis;
 import com.github.mikephil.charting.components.YAxis;
 import com.github.mikephil.charting.data.Entry;
 import com.github.mikephil.charting.data.LineData;
 import com.github.mikephil.charting.data.LineDataSet;
-import com.github.mikephil.charting.formatter.XAxisValueFormatter;
 import com.github.mikephil.charting.utils.ColorTemplate;
-import com.github.mikephil.charting.utils.ViewPortHandler;
 
 import java.net.URISyntaxException;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -112,8 +106,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
 
         powerManager = (PowerManager) getSystemService(POWER_SERVICE);
-//        wakeLock = powerManager.newWakeLock(PowerManager.SCREEN_DIM_WAKE_LOCK, "MyWakelockTag");
-//        wakeLock.acquire();
+        wakeLock = powerManager.newWakeLock(PowerManager.SCREEN_DIM_WAKE_LOCK, "MyWakelockTag");
+        wakeLock.acquire();
 
         registerListener = new Emitter.Listener() {
             @Override
@@ -353,8 +347,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         selectedSensorText.setText(selectedSensor.getName());
         selectedResolutionText.setText(selectedResolution + "");
-        //handler = new Handler();
-        //handler.postDelayed(sensorDataTimer, selectedResolution);
 
         execService.scheduleAtFixedRate(sensorDataTimer, 0, selectedResolution, TimeUnit.MILLISECONDS);
         initCharts();
@@ -450,7 +442,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             if (currentSensorData != null) {
                 addSensorDataToCharts(currentSensorData);
             }
-            //handler.postDelayed(sensorDataTimer, selectedResolution);
         }
     };
 
@@ -541,8 +532,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         sensorManager.unregisterListener(this);
         activeSensor = sensorManager.getDefaultSensor(selectedSensor.getType());
         initCharts();
-        //handler = new Handler();
-        //handler.postDelayed(sensorDataTimer, selectedResolution);
         execService.shutdown();
         execService = Executors.newScheduledThreadPool(5);
         execService.scheduleAtFixedRate(sensorDataTimer, 0, selectedResolution, TimeUnit.MILLISECONDS);
